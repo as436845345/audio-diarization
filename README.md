@@ -8,6 +8,7 @@
 
 - [功能特性](#功能特性)
 - [环境要求](#环境要求)
+- [TODO](#todo)
 - [安装说明](#安装说明)
 - [使用方法](#使用方法)
 - [命令行参数](#命令行参数)
@@ -39,6 +40,10 @@
   - torch
   - nltk
   - tqdm
+
+## TODO
+
+- [ ] 文件校验：sha256
 
 ## 安装说明
 
@@ -106,29 +111,29 @@ python audio_diarization.py -i "path/to/audio.wav" --nltk-path "path/to/nltk_dat
 
 ## 命令行参数
 
-| 参数 | 类型 | 默认值 | 说明 |
-| ---- | ---- | ------ | ---- |
-| `--input`, `-i` | 选项 | 必填 | 输入音频文件路径 |
-| `--output`, `-o` | 选项 | 音频同目录 | 输出目录 |
-| `--download-mode`, `-dm` | 选项 | `token` | 模型下载模式：`token` 或 `proxy` |
-| `--token` | 选项 | 无 | HuggingFace token（用于下载模型） |
-| `--model-dir`, `-md` | 选项 | 无 | 模型缓存目录 |
-| `--model-name`, `-mn` | 选项 | `large-v3` | Whisper 模型名称 |
-| `--min-speakers` | 选项 | 无 | 最小说话人数量 |
-| `--max-speakers` | 选项 | 无 | 最大说话人数量 |
-| `--nltk-path` | 选项 | 无 | NLTK 数据目录路径 |
+| 参数                     | 类型 | 默认值     | 说明                              |
+| ------------------------ | ---- | ---------- | --------------------------------- |
+| `--input`, `-i`          | 选项 | 必填       | 输入音频文件路径                  |
+| `--output`, `-o`         | 选项 | 音频同目录 | 输出目录                          |
+| `--download-mode`, `-dm` | 选项 | `token`    | 模型下载模式：`token` 或 `proxy`  |
+| `--token`                | 选项 | 无         | HuggingFace token（用于下载模型） |
+| `--model-dir`, `-md`     | 选项 | 无         | 模型缓存目录                      |
+| `--model-name`, `-mn`    | 选项 | `large-v3` | Whisper 模型名称                  |
+| `--min-speakers`         | 选项 | 无         | 最小说话人数量                    |
+| `--max-speakers`         | 选项 | 无         | 最大说话人数量                    |
+| `--nltk-path`            | 选项 | 无         | NLTK 数据目录路径                 |
 
 ## 输出文件
 
 执行完成后，输出目录将生成以下文件：
 
-| 文件名 | 说明 |
-| ------ | ---- |
+| 文件名            | 说明                         |
+| ----------------- | ---------------------------- |
 | `transcribe.json` | 初始转录结果（Whisper 输出） |
-| `align.json` | 对齐后的时间戳结果 |
-| `speakers.json` | 带说话人标签的分段结果 |
-| `transcript.json` | 合并后的完整转录文本 |
-| `SPEAKER/` | 按说话人拆分的音频文件目录 |
+| `align.json`      | 对齐后的时间戳结果           |
+| `speakers.json`   | 带说话人标签的分段结果       |
+| `transcript.json` | 合并后的完整转录文本         |
+| `SPEAKER/`        | 按说话人拆分的音频文件目录   |
 
 ### 输出目录结构
 
