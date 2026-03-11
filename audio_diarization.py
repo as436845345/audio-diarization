@@ -203,7 +203,7 @@ def generate_speaker_audio(
             print(f"✓ {speaker}: {os.path.basename(output_path)} ({duration:.1f}s)")
         except Exception as e:
             print(f"✗ Save failed {output_path}: {e}")
-            exit(1)
+            raise typer.Exit(1)
 
     print(f"Finished: generated {len(output_files)} speaker files")
 
@@ -234,12 +234,12 @@ def main(
             "--output", "-o", help="Output directory (default: same as audio)"
         ),
     ] = None,
-    download_type: Annotated[
+    download_mode: Annotated[
         str,
         typer.Option(
-            "--download-type",
-            "-dt",
-            help="Model download method: token or proxy",
+            "--download-mode",
+            "-dm",
+            help="Model download mode: token or proxy",
         ),
     ] = "token",
     token: Annotated[
@@ -272,8 +272,12 @@ def main(
     """
 
     # 使用 HuggingFace 镜像
-    if download_type == "token":
+    if download_mode == "token":
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+        if not token:
+            print("下载模式为 `token` 时必须通过 token！")
+            raise typer.Exit(1)
 
     # 设置 NLTK 路径
     if nltk_data_path is not None:

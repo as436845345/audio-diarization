@@ -51,9 +51,19 @@ cd audio-diarization
 
 ### 2. 安装依赖
 
+先安装 `torch`，因为 `whisperx` 支持的 `torch` 版本为 2.8.0：
+
 ```bash
-pip install whisperx typer librosa soundfile numpy torch nltk tqdm
+pip install torch==2.8.0 torchaudio==2.8.0 torchvision==0.23 --index-url https://download.pytorch.org/whl/cu126/
 ```
+
+安装剩下包：
+
+```bash
+pip install whisperx librosa
+```
+
+> 其他依赖库在安装 `whisperx` 和 `librosa` 时自动安装。
 
 ### 3. 配置 NLTK 数据（可选）
 
@@ -100,7 +110,7 @@ python audio_diarization.py -i "path/to/audio.wav" --nltk-path "path/to/nltk_dat
 | ---- | ---- | ------ | ---- |
 | `--input`, `-i` | 选项 | 必填 | 输入音频文件路径 |
 | `--output`, `-o` | 选项 | 音频同目录 | 输出目录 |
-| `--download-type`, `-dt` | 选项 | `token` | 模型下载方式：`token` 或 `proxy` |
+| `--download-mode`, `-dm` | 选项 | `token` | 模型下载模式：`token` 或 `proxy` |
 | `--token` | 选项 | 无 | HuggingFace token（用于下载模型） |
 | `--model-dir`, `-md` | 选项 | 无 | 模型缓存目录 |
 | `--model-name`, `-mn` | 选项 | `large-v3` | Whisper 模型名称 |
