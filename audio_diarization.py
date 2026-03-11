@@ -4,6 +4,8 @@ import os  # 文件路径处理
 import typer  # CLI 框架
 from typing_extensions import Annotated  # 用于类型标注
 
+import file_operation as fo
+
 
 def get_device():
     """
@@ -31,52 +33,6 @@ def release_gpu_resources():
 
     gc.collect()  # 手动触发垃圾回收
     cuda.empty_cache()  # 清空 CUDA cache
-
-
-def load_from_json(path: str) -> dict | None:
-    """
-    从 JSON 文件加载数据。
-
-    Parameters
-    ----------
-    path : str
-        JSON 文件路径
-
-    Returns
-    -------
-    dict | None
-        如果文件存在返回 JSON 数据，否则返回 None
-    """
-
-    # 判断文件是否存在
-    if os.path.isfile(path):
-        print("[INFO] load from file...")
-
-        # 读取 JSON 文件
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    return None
-
-
-def save_to_json(path: str, data):
-    """
-    保存数据到 JSON 文件。
-
-    Parameters
-    ----------
-    path : str
-        输出 JSON 文件路径
-    data :
-        要保存的数据
-    """
-
-    # 确保目录存在
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    # 写入 JSON 文件
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def merge_segments(
@@ -342,7 +298,7 @@ def main(
 
     print("[INFO] transcribing...")
 
-    transcribe_result = load_from_json(transcribe_json_path)
+    transcribe_result = fo.load_from_json(transcribe_json_path)
 
     if transcribe_result is None:
         model = whisperx.load_model(
@@ -356,13 +312,13 @@ def main(
 
         transcribe_result = model.transcribe(audio, batch_size=8)
 
-        save_to_json(transcribe_json_path, transcribe_result)
+        fo.save_to_json(transcribe_json_path, transcribe_result)
 
     language = transcribe_result["language"]
 
     print("[INFO] aligning...")
 
-    align_result = load_from_json(align_json_path)
+    align_result = fo.load_from_json(align_json_path)
 
     if align_result is None:
         align_model, align_metadata = whisperx.load_align_model(
@@ -383,11 +339,11 @@ def main(
         del align_model
         release_gpu_resources()
 
-        save_to_json(align_json_path, align_result)
+        fo.save_to_json(align_json_path, align_result)
 
     print("[INFO] diarization...")
 
-    speakers_result = load_from_json(speakers_json_path)
+    speakers_result = fo.load_from_json(speakers_json_path)
 
     if speakers_result is None:
         diarize_model = DiarizationPipeline(
@@ -407,11 +363,11 @@ def main(
             align_result,
         )
 
-        save_to_json(speakers_json_path, speakers_result)
+        fo.save_to_json(speakers_json_path, speakers_result)
 
     print("[INFO] transcript...")
 
-    transcript = load_from_json(transcript_json_path)
+    transcript = fo.load_from_json(transcript_json_path)
 
     if transcript is None:
         transcript = [
@@ -431,7 +387,7 @@ def main(
             sentence_endings=sentence_endings,
         )
 
-        save_to_json(transcript_json_path, transcript)
+        fo.save_to_json(transcript_json_path, transcript)
 
     print("[INFO] generating speaker audio...")
 
