@@ -1,27 +1,58 @@
-import json
-import os
+import json  # 用于读写 JSON 文件
+import os  # 文件路径处理
 
-import typer
-from typing_extensions import Annotated
+import typer  # CLI 框架
+from typing_extensions import Annotated  # 用于类型标注
 
 
 def get_device():
-    from torch import cuda
+    """
+    检测当前环境是否支持 CUDA GPU。
 
-    return "cuda" if cuda.is_available() else "cpu"
+    Returns
+    -------
+    str
+        如果 CUDA 可用返回 'cuda'，否则返回 'cpu'
+    """
+    from torch import cuda  # 导入 torch.cuda
+
+    return "cuda" if cuda.is_available() else "cpu"  # 根据 CUDA 是否可用返回设备类型
 
 
 def release_gpu_resources():
-    import gc
-    from torch import cuda
+    """
+    释放 GPU 显存。
 
-    gc.collect()
-    cuda.empty_cache()
+    用于删除模型后清理显存，
+    防止后续模型加载失败。
+    """
+    import gc  # Python 垃圾回收
+    from torch import cuda  # CUDA 控制
+
+    gc.collect()  # 手动触发垃圾回收
+    cuda.empty_cache()  # 清空 CUDA cache
 
 
 def load_from_json(path: str) -> dict | None:
+    """
+    从 JSON 文件加载数据。
+
+    Parameters
+    ----------
+    path : str
+        JSON 文件路径
+
+    Returns
+    -------
+    dict | None
+        如果文件存在返回 JSON 数据，否则返回 None
+    """
+
+    # 判断文件是否存在
     if os.path.isfile(path):
         print("[INFO] load from file...")
+
+        # 读取 JSON 文件
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
@@ -29,9 +60,21 @@ def load_from_json(path: str) -> dict | None:
 
 
 def save_to_json(path: str, data):
-    # TODO: 不确定是写在这里还是一开始创建好
-    os.makedirs(path, exist_ok=True)
+    """
+    保存数据到 JSON 文件。
 
+    Parameters
+    ----------
+    path : str
+        输出 JSON 文件路径
+    data :
+        要保存的数据
+    """
+
+    # 确保目录存在
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    # 写入 JSON 文件
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -39,38 +82,67 @@ def save_to_json(path: str, data):
 def merge_segments(
     transcript,
     ending_punct="!\"').:;?]}~…",
-    ending_eojil: list[str] | None = None,
+    sentence_endings: list[str] | None = None,
 ):
+    """
+    合并 WhisperX 分段文本。
 
-    merged = []
-    buffer = None
+    WhisperX 的分段通常较短，
+    此函数根据句子结束标点或韩语语尾合并为完整句子。
 
+    Parameters
+    ----------
+    transcript : list
+        WhisperX 生成的分段
+    ending_punct : str
+        句子结束标点
+    sentence_endings : list[str] | None
+        句尾列表
+
+    Returns
+    -------
+    list
+        合并后的 transcript
+    """
+
+    merged = []  # 存储合并后的结果
+    buffer = None  # 当前正在拼接的句子
+
+    # 遍历所有分段
     for seg in transcript:
-        text = seg["text"].strip()
+        text = seg["text"].strip()  # 去掉首尾空格
+
+        # 空文本直接跳过
         if not text:
             continue
 
+        # 如果 buffer 为空说明是新的句子
         if buffer is None:
-            buffer = seg.copy()
+            buffer = seg.copy()  # 复制 segment
             buffer["text"] = text
         else:
-            # 判断：标点结尾 或 韩语语尾结尾
+            # 获取 buffer 的文本
             b_text = buffer["text"].rstrip()
+
+            # 取最后一个字符
             last_char = b_text[-1]
 
+            # 判断是否句子结束
             is_ending = (last_char in ending_punct) or b_text.endswith(
-                tuple(ending_eojil or ())
+                tuple(sentence_endings or ())
             )
 
+            # 如果是句子结束
             if is_ending:
-                merged.append(buffer)
-                buffer = seg.copy()
+                merged.append(buffer)  # 保存当前句子
+                buffer = seg.copy()  # 新句子
                 buffer["text"] = text
             else:
-                # 合并时注意韩语空格规则
+                # 否则继续拼接
                 buffer["text"] = b_text + " " + text.lstrip()
                 buffer["end"] = seg["end"]
 
+    # 最后一个 buffer 也加入结果
     if buffer:
         merged.append(buffer)
 
@@ -85,6 +157,33 @@ def generate_speaker_audio(
     sample_rate: int = 24000,
     output_folder_name: str = "SPEAKER",
 ) -> dict[str, str]:
+    """
+    根据说话人拆分音频。
+
+    将 transcript 中每个 speaker 的音频
+    拼接为一个单独 WAV 文件。
+
+    Parameters
+    ----------
+    wav_path : str
+        输入音频路径
+    transcript : list[dict]
+        带 speaker 的分段
+    output_dir : str
+        输出目录
+    delay : float
+        每个分段前后增加的时间
+    sample_rate : int
+        音频采样率
+    output_folder_name : str
+        输出文件夹名称
+
+    Returns
+    -------
+    dict[str, str]
+        speaker -> wav 文件路径
+    """
+
     import librosa
     import numpy as np
     import soundfile as sf
@@ -92,59 +191,70 @@ def generate_speaker_audio(
 
     # 加载音频
     audio_data, _ = librosa.load(wav_path, sr=sample_rate)
+
+    # 音频长度
     length = len(audio_data)
 
-    # 按说话人收集片段（避免重复拼接）
+    # 每个 speaker 的音频块
     speaker_segments: dict[str, list[np.ndarray]] = {}
 
-    for segment in tqdm(transcript, desc="处理分段"):
+    # 遍历所有分段
+    for segment in tqdm(transcript, desc="Processing segments"):
         speaker = segment.get("speaker", "UNKNOWN")
         start_time = segment["start"]
         end_time = segment["end"]
 
-        # 验证时间戳
+        # 检查时间是否合法
         if start_time >= end_time or start_time < 0:
-            print(f"跳过无效时间段: {speaker} [{start_time}, {end_time}]")
+            print(f"Skip invalid segment: {speaker} [{start_time}, {end_time}]")
             continue
 
-        # 计算带 delay 的索引
+        # 计算样本索引
         start_idx = max(0, int((start_time - delay) * sample_rate))
         end_idx = min(int((end_time + delay) * sample_rate), length)
 
         if start_idx >= end_idx:
             continue
 
-        # 截取并收集
+        # 截取音频
         chunk = audio_data[start_idx:end_idx].copy()
+
+        # 添加到 speaker
         speaker_segments.setdefault(speaker, []).append(chunk)
 
+    # speaker 输出目录
     speaker_folder = os.path.join(output_dir, output_folder_name)
     os.makedirs(speaker_folder, exist_ok=True)
 
-    # 拼接并保存
     output_files = {}
-    for speaker, chunks in tqdm(speaker_segments.items(), desc="保存音频"):
+
+    # 保存每个 speaker
+    for speaker, chunks in tqdm(speaker_segments.items(), desc="Saving audio"):
         if not chunks:
             continue
 
-        # 一次性拼接
+        # 拼接音频
         speaker_audio = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
 
         output_path = os.path.join(speaker_folder, f"{speaker}.wav")
+
         try:
             sf.write(str(output_path), speaker_audio, sample_rate)
+
             output_files[speaker] = str(output_path)
+
             duration = len(speaker_audio) / sample_rate
-            print(f"✓ {speaker}: {os.path.basename(output_path)} ({duration:.1f}秒)")
+            print(f"✓ {speaker}: {os.path.basename(output_path)} ({duration:.1f}s)")
         except Exception as e:
-            print(f"✗ 保存失败 {output_path}: {e}")
+            print(f"✗ Save failed {output_path}: {e}")
             exit(1)
 
-    print(f"完成: 生成 {len(output_files)} 个说话人音频")
+    print(f"Finished: generated {len(output_files)} speaker files")
+
     return output_files
 
 
-__transcript_eojils = {
+LANGUAGE_SENTENCE_ENDINGS = {
     "kr": [
         "죠",
         "요",
@@ -161,30 +271,55 @@ __transcript_eojils = {
 
 
 def main(
-    wav_path: Annotated[str, typer.Option("--input", "-i", help="")],
-    output_dir: Annotated[str | None, typer.Option("--outpub", "-o", help="")] = None,
+    wav_path: Annotated[str, typer.Option("--input", "-i", help="Input audio file")],
+    output_dir: Annotated[
+        str | None,
+        typer.Option(
+            "--output", "-o", help="Output directory (default: same as audio)"
+        ),
+    ] = None,
     download_type: Annotated[
-        str, typer.Option("--download-type", "-dt", help="token/proxy")
+        str,
+        typer.Option(
+            "--download-type",
+            "-dt",
+            help="Model download method: token or proxy",
+        ),
     ] = "token",
-    token: Annotated[str | None, typer.Option("--token", help="")] = None,
+    token: Annotated[
+        str | None,
+        typer.Option("--token", help="HuggingFace token"),
+    ] = None,
     model_dir: Annotated[
-        str | None, typer.Option("--model-dir", "-md", help="")
+        str | None,
+        typer.Option("--model-dir", "-md", help="Model cache directory"),
     ] = None,
     model_name: Annotated[
-        str | None, typer.Option("--model-name", "-mn", help="")
+        str,
+        typer.Option("--model-name", "-mn", help="Whisper model name"),
     ] = "large-v3",
     min_speakers: Annotated[
-        int | None, typer.Option("--min-speakers", "-mis", help="")
+        int | None,
+        typer.Option("--min-speakers", help="Minimum number of speakers"),
     ] = None,
     max_speakers: Annotated[
-        int | None, typer.Option("--max-speakers", "-mas", help="")
+        int | None,
+        typer.Option("--max-speakers", help="Maximum number of speakers"),
     ] = None,
-    nltk_data_path: Annotated[str | None, typer.Option("--nltk-path", help="")] = None,
+    nltk_data_path: Annotated[
+        str | None,
+        typer.Option("--nltk-path", help="NLTK data directory"),
+    ] = None,
 ):
+    """
+    WhisperX 音频转录 + 对齐 + 说话人分离 CLI 工具。
+    """
+
+    # 使用 HuggingFace 镜像
     if download_type == "token":
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-        # token = "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"
 
+    # 设置 NLTK 路径
     if nltk_data_path is not None:
         import nltk
 
@@ -203,45 +338,37 @@ def main(
     speakers_json_path = os.path.join(output_dir, "speakers.json")
     transcript_json_path = os.path.join(output_dir, "transcript.json")
 
-    print(f"[INFO] use device: {device}")
+    print(f"[INFO] device: {device}")
 
-    print("[INFO] transcribe...")
+    print("[INFO] transcribing...")
 
-    # 1. Transcribe with original whisper (batched)
     transcribe_result = load_from_json(transcribe_json_path)
 
     if transcribe_result is None:
-        print("[INFO] load model...")
-
-        # use_auth_token: https://github.com/m-bain/whisperX/blob/main/whisperx/asr.py#L361
         model = whisperx.load_model(
-            model_name, device, download_root=model_dir, use_auth_token=token
+            model_name,
+            device,
+            download_root=model_dir,
+            use_auth_token=token,
         )
 
         audio = whisperx.load_audio(wav_path)
-        transcribe_result = model.transcribe(audio, batch_size=8)
 
-        print("[INFO] save transcribe to json file...")
+        transcribe_result = model.transcribe(audio, batch_size=8)
 
         save_to_json(transcribe_json_path, transcribe_result)
 
     language = transcribe_result["language"]
-    if language == "nn":
-        print(f"No language detected in {wav_path}")
-        exit(1)
 
-    print(f"[SUCCESS] transcribe successful!")
+    print("[INFO] aligning...")
 
-    print("[INFO] align...")
-
-    # 2. Align whisper output
     align_result = load_from_json(align_json_path)
 
     if align_result is None:
-        print("[INFO] load align model...")
-
         align_model, align_metadata = whisperx.load_align_model(
-            language_code=language, device=device, model_dir=model_dir
+            language_code=language,
+            device=device,
+            model_dir=model_dir,
         )
 
         align_result = whisperx.align(
@@ -253,33 +380,32 @@ def main(
             return_char_alignments=False,
         )
 
-        # delete model if low on GPU resources
         del align_model
         release_gpu_resources()
 
-        print("[INFO] save align to json file...")
-
         save_to_json(align_json_path, align_result)
 
-    # 3. Assign speaker labels
+    print("[INFO] diarization...")
+
     speakers_result = load_from_json(speakers_json_path)
 
     if speakers_result is None:
-        # https://github.com/huggingface/transformers/blob/main/src/transformers/utils/hub.py#L832
-        # 类似的函数都是用 `cache_dir`
         diarize_model = DiarizationPipeline(
-            token=token, device=device, cache_dir=model_dir
+            token=token,
+            device=device,
+            cache_dir=model_dir,
         )
 
-        # add min/max number of speakers if known
         diarize_segments = diarize_model(
-            wav_path, min_speakers=min_speakers, max_speakers=max_speakers
+            wav_path,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
         )
 
-        # 为每个词分配说话人
-        speakers_result = whisperx.assign_word_speakers(diarize_segments, align_result)
-
-        print("[INFO] save speakers to json file...")
+        speakers_result = whisperx.assign_word_speakers(
+            diarize_segments,
+            align_result,
+        )
 
         save_to_json(speakers_json_path, speakers_result)
 
@@ -288,26 +414,28 @@ def main(
     transcript = load_from_json(transcript_json_path)
 
     if transcript is None:
-        # 转换为简化结构
         transcript = [
             {
-                "start": segement["start"],
-                "end": segement["end"],
-                "text": segement["text"].strip(),
-                # "speaker": segement.get("speaker", "SPEAKER_00"),
-                "speaker": "SPEAKER_00",
+                "start": seg["start"],
+                "end": seg["end"],
+                "text": seg["text"].strip(),
+                "speaker": seg.get("speaker", "SPEAKER_00"),
             }
-            for segement in speakers_result["segments"]
+            for seg in speakers_result["segments"]
         ]
 
-        merge_eojil = __transcript_eojils.get(language, None)
+        sentence_endings = LANGUAGE_SENTENCE_ENDINGS.get(language)
 
-        transcript = merge_segments(transcript, ending_eojil=merge_eojil)
+        transcript = merge_segments(
+            transcript,
+            sentence_endings=sentence_endings,
+        )
+
         save_to_json(transcript_json_path, transcript)
 
-    print("[INFO] generate speaker audio...")
+    print("[INFO] generating speaker audio...")
 
-    generate_speaker_audio(wav_audio_path, transcript, output_dir)  # type: ignore
+    generate_speaker_audio(wav_path, transcript, output_dir)  # type: ignore
 
 
 if __name__ == "__main__":
